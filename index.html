@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Sled Downhill</title>
+<title>Blizzard Break</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
 body {
   margin: 0;
@@ -14,7 +15,7 @@ body {
 canvas {
   display: block;
   margin: auto;
-  background: linear-gradient(#fff, #dfefff);
+  background: linear-gradient(#ffffff, #dfefff);
 }
 #ui, #mobileControls {
   padding: 10px;
@@ -24,12 +25,13 @@ canvas {
   height: 60px;
   font-size: 24px;
 }
-.hidden { display:none; }
+.hidden { display: none; }
 </style>
 </head>
+
 <body>
 
-<h2>🛷 Sled Downhill</h2>
+<h2>🛷 Blizzard Break</h2>
 <canvas id="game" width="420" height="600"></canvas>
 
 <div id="ui">
@@ -56,91 +58,134 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-/* MOBILE DETECTION */
+/* 📱 MOBILE DETECTION */
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-if (isMobile) document.getElementById("mobileControls").classList.remove("hidden");
+if (isMobile) {
+  document.getElementById("mobileControls").classList.remove("hidden");
+}
 
-/* CANVAS */
+/* 🎨 CANVAS */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-/* INPUT */
-let left=false, right=false;
-document.addEventListener("keydown", e=>{
-  if(e.key==="ArrowLeft") left=true;
-  if(e.key==="ArrowRight") right=true;
+/* 🎮 INPUT */
+let left = false, right = false;
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft") left = true;
+  if (e.key === "ArrowRight") right = true;
 });
-document.addEventListener("keyup", e=>{
-  if(e.key==="ArrowLeft") left=false;
-  if(e.key==="ArrowRight") right=false;
+document.addEventListener("keyup", e => {
+  if (e.key === "ArrowLeft") left = false;
+  if (e.key === "ArrowRight") right = false;
 });
 
-/* SPRITES */
-const sledImg = new Image(); sledImg.src="sprites/sled.png";
-const rockImg = new Image(); rockImg.src="sprites/rock.png";
+/* 🖼️ SPRITES */
+const sledImg = new Image(); sledImg.src = "sprites/sled.png";
+const rockImg = new Image(); rockImg.src = "sprites/rock.png";
+const coinImg = new Image(); coinImg.src = "sprites/coin.png";
 
-/* SOUNDS */
+/* 🔊 SOUNDS */
 const crashSound = new Audio("sounds/crash.wav");
 const coinSound = new Audio("sounds/coin.wav");
 const music = new Audio("sounds/music.mp3");
-music.loop=true;
-music.volume=0.4;
-document.body.addEventListener("click", ()=>music.play(), { once:true });
+music.loop = true;
+music.volume = 0.4;
+document.body.addEventListener("click", () => music.play(), { once: true });
 
-/* SAVE */
+/* 💾 SAVE DATA */
 let save = JSON.parse(localStorage.getItem("save")) || {
-  coins:0,
-  prestige:0,
-  best:0
+  coins: 0,
+  prestige: 0,
+  best: 0
 };
 
-let player, obstacles, distance, gameOver;
+/* 🧠 GAME STATE */
+let player, obstacles, coins, distance, gameOver;
 
-function reset(){
-  player={x:190,y:520,w:40,h:40};
-  obstacles=[];
-  distance=0;
-  gameOver=false;
+/* 🔁 RESET GAME */
+function reset() {
+  player = { x: 190, y: 520, w: 40, h: 40 };
+  obstacles = [];
+  coins = [];
+  distance = 0;
+  gameOver = false;
 }
 reset();
 
-function spawn(){
-  obstacles.push({x:Math.random()*380,y:-40,s:32});
+/* 🪨 SPAWN ROCK */
+function spawnObstacle() {
+  obstacles.push({
+    x: Math.random() * 380,
+    y: -40,
+    s: 32
+  });
 }
 
-function update(){
-  if(gameOver) return;
+/* 🪙 SPAWN COIN */
+function spawnCoin() {
+  coins.push({
+    x: Math.random() * 380,
+    y: -30,
+    s: 24,
+    spin: 0
+  });
+}
+
+/* 🔄 UPDATE GAME */
+function update() {
+  if (gameOver) return;
 
   let speed = 4 + save.prestige * 0.5;
-  distance += speed*0.02;
+  distance += speed * 0.02;
 
-  if(Math.random()<0.02) spawn();
+  if (Math.random() < 0.02) spawnObstacle();
+  if (Math.random() < 0.015) spawnCoin();
 
-  if(left) player.x -= 5;
-  if(right) player.x += 5;
-  player.x=Math.max(0,Math.min(380,player.x));
+  if (left) player.x -= 5;
+  if (right) player.x += 5;
+  player.x = Math.max(0, Math.min(380, player.x));
 
-  obstacles.forEach(o=>{
-    o.y+=speed;
-    if(
-      player.x<o.x+o.s &&
-      player.x+player.w>o.x &&
-      player.y<o.y+o.s &&
-      player.y+player.h>o.y
-    ){
+  /* 🪨 OBSTACLES */
+  obstacles.forEach(o => {
+    o.y += speed;
+    if (
+      player.x < o.x + o.s &&
+      player.x + player.w > o.x &&
+      player.y < o.y + o.s &&
+      player.y + player.h > o.y
+    ) {
       crashSound.play();
       endGame();
     }
   });
 
-  obstacles=obstacles.filter(o=>o.y<650);
+  /* 🪙 COINS */
+  coins.forEach(c => {
+    c.y += speed;
+    c.spin += 0.15;
+
+    if (
+      player.x < c.x + c.s &&
+      player.x + player.w > c.x &&
+      player.y < c.y + c.s &&
+      player.y + player.h > c.y
+    ) {
+      coinSound.play();
+      save.coins += 1;
+      c.collected = true;
+    }
+  });
+
+  obstacles = obstacles.filter(o => o.y < 650);
+  coins = coins.filter(c => c.y < 650 && !c.collected);
 }
 
-function endGame(){
-  gameOver=true;
-  save.coins+=Math.floor(distance*(1+save.prestige*0.5));
-  save.best=Math.max(save.best,distance);
-  localStorage.setItem("save",JSON.stringify(save));
+/* 💥 END GAME */
+function endGame() {
+  gameOver = true;
+  save.coins += Math.floor(distance * (1 + save.prestige * 0.5));
+  save.best = Math.max(save.best, distance);
+  localStorage.setItem("save", JSON.stringify(save));
 
   db.collection("scores").add({
     distance: Math.floor(distance),
@@ -149,29 +194,48 @@ function endGame(){
   });
 }
 
-function draw(){
-  ctx.clearRect(0,0,420,600);
-  ctx.drawImage(sledImg,player.x,player.y,player.w,player.h);
-  obstacles.forEach(o=>ctx.drawImage(rockImg,o.x,o.y,o.s,o.s));
+/* 🎨 DRAW */
+function draw() {
+  ctx.clearRect(0, 0, 420, 600);
+
+  ctx.drawImage(sledImg, player.x, player.y, player.w, player.h);
+
+  obstacles.forEach(o => {
+    ctx.drawImage(rockImg, o.x, o.y, o.s, o.s);
+  });
+
+  coins.forEach(c => {
+    ctx.save();
+    ctx.translate(c.x + c.s / 2, c.y + c.s / 2);
+    ctx.scale(Math.cos(c.spin), 1);
+    ctx.drawImage(coinImg, -c.s / 2, -c.s / 2, c.s, c.s);
+    ctx.restore();
+  });
 }
 
-function loop(){
-  update(); draw();
-  document.getElementById("stats").innerText=
+/* 🔁 LOOP */
+function loop() {
+  update();
+  draw();
+
+  document.getElementById("stats").innerText =
     `Distance: ${distance.toFixed(1)} | Coins: ${save.coins} | Prestige: ${save.prestige}`;
+
   requestAnimationFrame(loop);
 }
 loop();
 
-function prestige(){
-  if(save.best>=500){
-    save.coins=0;
-    save.best=0;
+/* ⭐ PRESTIGE */
+function prestige() {
+  if (save.best >= 500) {
+    save.coins = 0;
+    save.best = 0;
     save.prestige++;
-    localStorage.setItem("save",JSON.stringify(save));
+    localStorage.setItem("save", JSON.stringify(save));
     reset();
   }
 }
 </script>
+
 </body>
 </html>
