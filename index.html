@@ -4,189 +4,152 @@
 <meta charset="UTF-8">
 <title>Blizzard Break</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <style>
-body {
-  margin: 0;
-  background: #87ceeb;
-  font-family: Arial;
-  text-align: center;
-}
-canvas {
-  display: block;
-  margin: auto;
-  background: linear-gradient(#ffffff, #dfefff);
-}
-#ui, #mobileControls {
-  padding: 10px;
-}
-#mobileControls button {
-  width: 45%;
-  height: 60px;
-  font-size: 24px;
-}
-.hidden { display: none; }
+body { margin:0; overflow:hidden; background:#87ceeb; font-family:Arial; }
+canvas { display:block; background: linear-gradient(#fff,#dfefff); }
+#ui { position:absolute; top:10px; left:10px; color:#000; font-size:18px; }
+#mobileControls { position:absolute; bottom:10px; width:100%; text-align:center; }
+#mobileControls button { width:45%; height:60px; font-size:24px; }
+.hidden { display:none; }
 </style>
 </head>
-
 <body>
-
-<h2>🛷 Blizzard Break</h2>
-<canvas id="game" width="420" height="600"></canvas>
-
+<canvas id="game"></canvas>
 <div id="ui">
-  <p id="stats"></p>
-  <button onclick="prestige()">Prestige Reset</button>
+  <p id="stats">Speed: 0 | Distance: 0 | Score: 0</p>
 </div>
-
 <div id="mobileControls" class="hidden">
   <button ontouchstart="left=true" ontouchend="left=false">⬅️</button>
   <button ontouchstart="right=true" ontouchend="right=false">➡️</button>
 </div>
 
-<!-- FIREBASE -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
-/* 🔥 FIREBASE CONFIG — REPLACE WITH YOUR OWN */
-const firebaseConfig = {
-  apiKey: "YOUR_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT"
-};
+// 🔥 FIREBASE
+const firebaseConfig = { apiKey: "YOUR_KEY", authDomain: "YOUR_PROJECT.firebaseapp.com", projectId: "YOUR_PROJECT" };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-/* 📱 MOBILE DETECTION */
+// MOBILE DETECTION
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-if (isMobile) {
-  document.getElementById("mobileControls").classList.remove("hidden");
-}
+if(isMobile) document.getElementById("mobileControls").classList.remove("hidden");
 
-/* 🎨 CANVAS */
+// CANVAS
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+function resizeCanvas(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize',resizeCanvas);
+resizeCanvas();
 
-/* 🎮 INPUT */
-let left = false, right = false;
-document.addEventListener("keydown", e => {
-  if (e.key === "ArrowLeft") left = true;
-  if (e.key === "ArrowRight") right = true;
-});
-document.addEventListener("keyup", e => {
-  if (e.key === "ArrowLeft") left = false;
-  if (e.key === "ArrowRight") right = false;
-});
+// INPUT
+let left=false,right=false;
+document.addEventListener("keydown", e=>{ if(e.key==="ArrowLeft") left=true; if(e.key==="ArrowRight") right=true; });
+document.addEventListener("keyup", e=>{ if(e.key==="ArrowLeft") left=false; if(e.key==="ArrowRight") right=false; });
 
-/* 🖼️ SPRITES */
-const sledImg = new Image(); sledImg.src = "sprites/sled.png";
-const rockImg = new Image(); rockImg.src = "sprites/rock.png";
-const coinImg = new Image(); coinImg.src = "sprites/coin.png";
+// SPRITES
+const sledImg = new Image(); sledImg.src="sprites/sled.png";
+const rockImg = new Image(); rockImg.src="sprites/rock.png";
+const treeImg = new Image(); treeImg.src="sprites/tree.png";
 
-/* 🔊 SOUNDS */
+// SOUNDS
 const crashSound = new Audio("sounds/crash.wav");
 const coinSound = new Audio("sounds/coin.wav");
-const music = new Audio("sounds/music.mp3");
-music.loop = true;
-music.volume = 0.4;
-document.body.addEventListener("click", () => music.play(), { once: true });
+const music = new Audio("sounds/music.mp3"); music.loop=true; music.volume=0.4;
+document.body.addEventListener("click", ()=>music.play().catch(()=>{}), {once:true});
 
-/* 💾 SAVE DATA */
-let save = JSON.parse(localStorage.getItem("save")) || {
-  coins: 0,
-  prestige: 0,
-  best: 0
-};
+// SAVE
+let save = JSON.parse(localStorage.getItem("save")) || { coins:0, prestige:0, best:0 };
 
-/* 🧠 GAME STATE */
-let player, obstacles, coins, distance, gameOver;
-
-/* 🔁 RESET GAME */
-function reset() {
-  player = { x: 190, y: 520, w: 40, h: 40 };
-  obstacles = [];
-  coins = [];
-  distance = 0;
-  gameOver = false;
+// GAME STATE
+let player, obstacles=[], distance=0, speed=6, gameOver=false;
+function reset(){
+  player={x:canvas.width/2-40/2, y:canvas.height-100, w:40,h:40};
+  obstacles=[];
+  distance=0;
+  speed=6;
+  gameOver=false;
 }
 reset();
 
-/* 🪨 SPAWN ROCK */
-function spawnObstacle() {
-  obstacles.push({
-    x: Math.random() * 380,
-    y: -40,
-    s: 32
-  });
+// 3D Perspective Utility
+function projectY(y, depth){ return canvas.height - (y / depth); }
+function projectX(x, depth){ return canvas.width/2 + (x - canvas.width/2)*(1/depth); }
+function projectSize(s, depth){ return s*(1/depth); }
+
+// SPAWN OBSTACLES
+function spawnObstacle(){
+  let type = Math.random()<0.5 ? 'rock':'tree';
+  let x = Math.random()*canvas.width;
+  let y = -50;
+  obstacles.push({x,y,type});
 }
 
-/* 🪙 SPAWN COIN */
-function spawnCoin() {
-  coins.push({
-    x: Math.random() * 380,
-    y: -30,
-    s: 24,
-    spin: 0
-  });
-}
-
-/* 🔄 UPDATE GAME */
-function update() {
-  if (gameOver) return;
-
-  let speed = 4 + save.prestige * 0.5;
-  distance += speed * 0.02;
-
-  if (Math.random() < 0.02) spawnObstacle();
-  if (Math.random() < 0.015) spawnCoin();
-
-  if (left) player.x -= 5;
-  if (right) player.x += 5;
-  player.x = Math.max(0, Math.min(380, player.x));
-
-  /* 🪨 OBSTACLES */
-  obstacles.forEach(o => {
+// UPDATE
+function update(){
+  if(gameOver) return;
+  distance += speed*0.05;
+  
+  // Player movement
+  if(left) player.x -= speed;
+  if(right) player.x += speed;
+  player.x = Math.max(0, Math.min(canvas.width-player.w, player.x));
+  
+  // Spawn obstacles
+  if(Math.random()<0.02) spawnObstacle();
+  
+  // Move obstacles (simulate coming towards player)
+  obstacles.forEach(o=>{
     o.y += speed;
-    if (
-      player.x < o.x + o.s &&
-      player.x + player.w > o.x &&
-      player.y < o.y + o.s &&
-      player.y + player.h > o.y
-    ) {
+    
+    // Collision check (simple rectangle)
+    let obsW=50, obsH=50;
+    if(player.x < o.x+obsW && player.x+player.w > o.x &&
+       player.y < o.y+obsH && player.y+player.h > o.y){
       crashSound.play();
       endGame();
     }
   });
-
-  /* 🪙 COINS */
-  coins.forEach(c => {
-    c.y += speed;
-    c.spin += 0.15;
-
-    if (
-      player.x < c.x + c.s &&
-      player.x + player.w > c.x &&
-      player.y < c.y + c.s &&
-      player.y + player.h > c.y
-    ) {
-      coinSound.play();
-      save.coins += 1;
-      c.collected = true;
-    }
-  });
-
-  obstacles = obstacles.filter(o => o.y < 650);
-  coins = coins.filter(c => c.y < 650 && !c.collected);
+  
+  obstacles = obstacles.filter(o=>o.y<canvas.height+100);
 }
 
-/* 💥 END GAME */
-function endGame() {
-  gameOver = true;
-  save.coins += Math.floor(distance * (1 + save.prestige * 0.5));
-  save.best = Math.max(save.best, distance);
-  localStorage.setItem("save", JSON.stringify(save));
+// DRAW
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  
+  // Draw ground (simple 3D slope effect)
+  let grd = ctx.createLinearGradient(0,0,0,canvas.height);
+  grd.addColorStop(0,"#fff");
+  grd.addColorStop(1,"#dfefff");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  
+  // Draw obstacles
+  obstacles.forEach(o=>{
+    let scale = 1 - o.y/canvas.height;
+    let img = o.type==='rock'?rockImg:treeImg;
+    let w = img.width*scale || 32*scale;
+    let h = img.height*scale || 32*scale;
+    ctx.drawImage(img, o.x, o.y, w, h);
+  });
+  
+  // Draw player
+  ctx.drawImage(sledImg, player.x, player.y, player.w, player.h);
+  
+  // UI
+  document.getElementById("stats").innerText = 
+    `Speed: ${speed.toFixed(1)} | Distance: ${Math.floor(distance)} | Score: ${save.coins}`;
+}
 
+// END GAME
+function endGame(){
+  gameOver=true;
+  save.coins += Math.floor(distance*(1+save.prestige*0.5));
+  save.best = Math.max(save.best, distance);
+  localStorage.setItem("save",JSON.stringify(save));
+  
   db.collection("scores").add({
     distance: Math.floor(distance),
     prestige: save.prestige,
@@ -194,48 +157,20 @@ function endGame() {
   });
 }
 
-/* 🎨 DRAW */
-function draw() {
-  ctx.clearRect(0, 0, 420, 600);
-
-  ctx.drawImage(sledImg, player.x, player.y, player.w, player.h);
-
-  obstacles.forEach(o => {
-    ctx.drawImage(rockImg, o.x, o.y, o.s, o.s);
-  });
-
-  coins.forEach(c => {
-    ctx.save();
-    ctx.translate(c.x + c.s / 2, c.y + c.s / 2);
-    ctx.scale(Math.cos(c.spin), 1);
-    ctx.drawImage(coinImg, -c.s / 2, -c.s / 2, c.s, c.s);
-    ctx.restore();
-  });
-}
-
-/* 🔁 LOOP */
-function loop() {
-  update();
-  draw();
-
-  document.getElementById("stats").innerText =
-    `Distance: ${distance.toFixed(1)} | Coins: ${save.coins} | Prestige: ${save.prestige}`;
-
-  requestAnimationFrame(loop);
-}
+// GAME LOOP
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
 loop();
 
-/* ⭐ PRESTIGE */
-function prestige() {
-  if (save.best >= 500) {
-    save.coins = 0;
-    save.best = 0;
+// PRESTIGE
+function prestige(){
+  if(save.best>=500){
+    save.coins=0;
+    save.best=0;
     save.prestige++;
-    localStorage.setItem("save", JSON.stringify(save));
+    localStorage.setItem("save",JSON.stringify(save));
     reset();
   }
 }
 </script>
-
 </body>
 </html>
